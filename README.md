@@ -1,4 +1,16 @@
-# OpenShift 4 Bare Metal Install - User Provisioned Infrastructure (UPI)
+# Credits
+
+These instructions are based on the original `https://github.com/ryanhay/ocp4-metal-install`.
+
+I have made a few modifications based on the following peices of documentation avaiable
+
+[Redhat on AOS videao](https://www.youtube.com/watch?v=7616SPiOXi8)
+[Nutnaix on AOS github](https://github.com/nutanix/openshift/tree/main/docs/install/manual)
+[Nutanix CSI setup](https://github.com/nutanix/openshift/tree/main/operators/csi)
+
+The following documentation was to set up everything from scracth and for me to do the install the hard way. A big thanks to @ryanhay for his original repo.
+
+# OpenShift 4 Bare Metal Install - User Provisioned Infrastructure (UPI) on Nutanix AOS
 
 - [OpenShift 4 Bare Metal Install - User Provisioned Infrastructure (UPI)](#openshift-4-bare-metal-install---user-provisioned-infrastructure-upi)
   - [Architecture Diagram](#architecture-diagram)
@@ -36,11 +48,11 @@
      - rhcos-X.X.X-x86_64-metal.x86_64.raw.gz
      - rhcos-X.X.X-x86_64-installer.x86_64.iso
 
-## Prepare the 'Bare Metal' environment
+## Prepare the 'Nutanix' environment
 
-> VMware ESXi used in this guide
+> Nutanix AHV used in this guide
 
-1. Copy the CentOS 8 iso to an ESXi datastore
+1. Upload the CentOS 8 iso to an Nutanix image store
 1. Create a new Port Group called 'OCP' under Networking
 1. Create 3 Control Plane virtual machines with minimum settings:
    - Name: ocp-cp-# (Example ocp-cp-1)
@@ -73,7 +85,7 @@
    - Load the CentOS_8.iso image into the CD/DVD drive
 1. Boot all virtual machines so they each are assigned a MAC address
 1. Shut down all virtual machines except for 'ocp-svc'
-1. Use the VMware ESXi dashboard to record the MAC address of each vm, these will be used later to set static IPs
+1. Use the Prism dashboard to record the MAC address of each vm, these will be used later to set static IPs
 
 ## Configure Environmental Services
 
@@ -88,7 +100,7 @@
 1. Move the files downloaded from the RedHat Cluster Manager site to the ocp-svc node
 
    ```bash
-   scp ~/Downloads/openshift-install-linux.tar.gz ~/Downloads/openshift-client-linux.tar.gz ~/Downloads/rhcos-x.x.x-x86_64-installer.x86_64.iso root@{ocp-svc_IP_address}:/root/
+   scp ~/Downloads/openshift-install-linux.tar.gz ~/Downloads/openshift-client-linux.tar.gz root@{ocp-svc_IP_address}:/root/
    ```
 
 1. SSH to the ocp-svc vm
@@ -151,7 +163,7 @@
    export KUBE_EDITOR="vim"
    ```
 
-1. Set a Static IP for OCP network interface `nmtui-edit ens224` or edit `/etc/sysconfig/network-scripts/ifcfg-ens224`
+1. Set a Static IP for OCP network interface `nmtui-edit ens4` or edit `/etc/sysconfig/network-scripts/ifcfg-ens4`
 
    - **Address**: 192.168.22.1
    - **DNS Server**: 127.0.0.1
@@ -166,8 +178,8 @@
    Create **internal** and **external** zones
 
    ```bash
-   nmcli connection modify ens224 connection.zone internal
-   nmcli connection modify ens192 connection.zone external
+   nmcli connection modify ens4 connection.zone internal
+   nmcli connection modify ens3 connection.zone external
    ```
 
    View zones:
@@ -359,47 +371,6 @@
    systemctl status haproxy
    ```
 
-1. Install and configure NFS for the OpenShift Registry. It is a requirement to provide storage for the Registry, emptyDir can be specified if necessary.
-
-   Install NFS Server
-
-   ```bash
-   dnf install nfs-utils -y
-   ```
-
-   Create the Share
-
-   Check available disk space and its location `df -h`
-
-   ```bash
-   mkdir -p /shares/registry
-   chown -R nobody:nobody /shares/registry
-   chmod -R 777 /shares/registry
-   ```
-
-   Export the Share
-
-   ```bash
-   echo "/shares/registry  192.168.22.0/24(rw,sync,root_squash,no_subtree_check,no_wdelay)" > /etc/exports
-   exportfs -rv
-   ```
-
-   Set Firewall rules:
-
-   ```bash
-   firewall-cmd --zone=internal --add-service mountd --permanent
-   firewall-cmd --zone=internal --add-service rpc-bind --permanent
-   firewall-cmd --zone=internal --add-service nfs --permanent
-   firewall-cmd --reload
-   ```
-
-   Enable and start the NFS related services
-
-   ```bash
-   systemctl enable nfs-server rpcbind
-   systemctl start nfs-server rpcbind nfs-mountd
-   ```
-
 ## Generate and host install files
 
 1. Generate an SSH key pair keeping all default options
@@ -435,9 +406,12 @@
    ~/openshift-install create manifests --dir ~/ocp-install
    ```
 
-   > A warning is shown about making the control plane nodes schedulable. It is up to you if you want to run workloads on the Control Plane nodes. If you dont want to you can disable this with:
-   > `sed -i 's/mastersSchedulable: true/mastersSchedulable: false/' ~/ocp-install/manifests/cluster-scheduler-02-config.yml`.
-   > Make any other custom changes you like to the core Kubernetes manifest files.
+   A warning is shown about making the control plane nodes schedulable. It is up to you if you want to run workloads on the Control Plane nodes. If you dont want to you can disable this with:
+
+   **I found that I needed to do this for UPI**
+   `sed -i 's/mastersSchedulable: true/mastersSchedulable: false/' ~/ocp-install/manifests/cluster-scheduler-02-config.yml`.
+   
+   Make any other custom changes you like to the core Kubernetes manifest files.
 
    Generate the Ignition config and Kubernetes auth files
 
@@ -457,12 +431,6 @@
    cp -R ~/ocp-install/* /var/www/html/ocp4
    ```
 
-1. Move the Core OS image to the web server directory (later you need to type this path multiple times so it is a good idea to shorten the name)
-
-   ```bash
-   mv ~/rhcos-X.X.X-x86_64-metal.x86_64.raw.gz /var/www/html/ocp4/rhcos
-   ```
-
 1. Change ownership and permissions of the web server directory
 
    ```bash
@@ -479,24 +447,31 @@
 
 ## Deploy OpenShift
 
-1. Power on the ocp-bootstrap host and ocp-cp-\# hosts and select 'Tab' to enter boot configuration. Enter the following configuration:
+1. Power on the ocp-bootstrap host and ocp-cp-\# hosts (Do them one by one not together). Once the machine boots enter the following configuration:
 
    ```bash
    # Bootstrap Node - ocp-bootstrap
-   coreos.inst.install_dev=sda coreos.inst.image_url=http://192.168.22.1:8080/ocp4/rhcos coreos.inst.insecure=yes coreos.inst.ignition_url=http://192.168.22.1:8080/ocp4/bootstrap.ign
+   sudo coreos-installer install /dev/sda --ignition-url http://192.168.22.1:8080/ocp4/bootstrap.ign --insecure ignition 
    ```
+   After installation `shutdown -h now` 
+   detach `CD-DOM`
+
 
    ```bash
-   # Each of the Control Plane Nodes - ocp-cp-\#
-   coreos.inst.install_dev=sda coreos.inst.image_url=http://192.168.22.1:8080/ocp4/rhcos coreos.inst.insecure=yes coreos.inst.ignition_url=http://192.168.22.1:8080/ocp4/master.ign
+   # Bootstrap Node - ocp-bootstrap
+   sudo coreos-installer install /dev/sda --ignition-url http://192.168.22.1:8080/ocp4/master.ign --insecure ignition 
    ```
+   After installation `shutdown -h now` 
+   detach `CD-DOM`
 
 1. Power on the ocp-w-\# hosts and select 'Tab' to enter boot configuration. Enter the following configuration:
 
    ```bash
-   # Each of the Worker Nodes - ocp-w-\#
-   coreos.inst.install_dev=sda coreos.inst.image_url=http://192.168.22.1:8080/ocp4/rhcos coreos.inst.insecure=yes coreos.inst.ignition_url=http://192.168.22.1:8080/ocp4/worker.ign
+   # Bootstrap Node - ocp-bootstrap
+   sudo coreos-installer install /dev/sda --ignition-url http://192.168.22.1:8080/ocp4/worker.ign --insecure ignition 
    ```
+   After installation `shutdown -h now` 
+   detach `CD-DOM`
 
 ## Monitor the Bootstrap Process
 
@@ -504,6 +479,12 @@
 
    ```bash
    ~/openshift-install --dir ~/ocp-install wait-for bootstrap-complete --log-level=debug
+   ```
+
+   Monitor Bootstrap server
+   
+   ```
+   ssh core@192.168.22.200 'for pod in $(sudo podman ps -a -q); do sudo podman logs $pod; done'
    ```
 
 1. Once bootstrapping is complete the ocp-boostrap node [can be removed](#remove-the-bootstrap-node)
@@ -529,6 +510,11 @@
 
    ```bash
    ~/openshift-install --dir ~/ocp-install wait-for install-complete
+   ```
+
+   Monitoring install
+   ```bash
+   tail -f ~/ocp-install/.openshift_install.log 
    ```
 
 1. Continue to join the worker nodes to the cluster in a new tab whilst waiting for the above command to complete
@@ -569,55 +555,75 @@
 
 > A Bare Metal cluster does not by default provide storage so the Image Registry Operator bootstraps itself as 'Removed' so the installer can complete. As the installation has now completed storage can be added for the Registry and the operator updated to a 'Managed' state.
 
-1. Create the 'image-registry-storage' PVC by updating the Image Registry operator config by updating the management state to 'Managed' and adding 'pvc' and 'claim' keys in the storage key:
+### Install nutanix CSI operator
+
+   Documentation [steps](https://github.com/nutanix/openshift/tree/main/operators/csi)
+
+   For creating the secret
+   `echo -n '<PRISMELEMENTIP>:9440:admin:<passwprd> | base64`
+
+   #### Storage secret
+   `oc -n ntnx-system apply -f ./csi-oc-registry-setup/storage-secret.yaml`
+
+   #### Storage Class
+
+   edit the `storage-class.yaml` and modify the following entries
+
+   ```yaml
+   dataServiceEndPoint: <PRISMELEMENT FLOATING IP>:3260 
+   #maksure storageContainer is changed
+   storageContainer: <default-container-NAME>
+   ```
+
+   `oc -n ntnx-system apply -f ./csi-oc-registry-setup/storage-class.yaml`
+
+   #### Additional steps are required for CSI setup with AHV
+
+   Follow the steps documented [here](https://portal.nutanix.com/page/documents/kbs/details?targetId=kA07V000000LWXJSA4)
+
+   `oc -n ntnx-system apply -f ./csi-oc-registry-setup/99-master-custom-enable-iscsid.yaml`
+
+   `oc -n ntnx-system apply -f ./csi-oc-registry-setup/99-worker-custom-enable-iscsid.yaml`
+
+   **Run following comming on every node**
+
+   `sudo systemctl enable --now iscsid`
+   
+
+   #### Create PVC
+
+   `oc -n openshift-image-registry apply -f ./csi-oc-registry-setup/pvc-claim.yaml`
+
+   Configure OpenShift registry storage similarly to OpenShift documentation):
 
    ```bash
    oc edit configs.imageregistry.operator.openshift.io
    ```
+
+   Change entries to
 
    ```yaml
    managementState: Managed
    ```
 
    ```yaml
+   rolloutStrategy: Recreate
+   ```
+
+   ```yaml
    storage:
      pvc:
-       claim: # leave the claim blank
+       claim: image-registry-claim
    ```
 
-1. Confirm the 'image-registry-storage' pvc has been created and is currently in a 'Pending' state
+   Confirm the 'image-registry-storage' pvc has been created and is currently in a 'Pending' state
 
    ```bash
    oc get pvc -n openshift-image-registry
    ```
 
-1. Create the persistent volume for the 'image-registry-storage' pvc to bind to
+   You can also watch the official [video](https://www.youtube.com/watch?v=7616SPiOXi8) or read the documentation [here](https://github.com/nutanix/openshift/tree/main/docs/install/manual)
 
-   ```bash
-   oc create -f ~/ocp4-metal-install/manifest/registry-pv.yaml
-   ```
-
-1. After a short wait the 'image-registry-storage' pvc should now be bound
-
-   ```bash
-   oc get pvc -n openshift-image-registry
-   ```
-
-## Create the first Admin user
-
-1. Apply the `oauth-htpasswd.yaml` file to the cluster
-
-   > This will create a user 'admin' with the password 'password'. To set a different username and password substitue the htpasswd key in the '~/ocp4-metal-install/manifest/oauth-htpasswd.yaml' file with the output of `htpasswd -n -B -b <username> <password>`
-
-   ```bash
-   oc apply -f ~/ocp4-metal-install/manifest/oauth-htpasswd.yaml
-   ```
-
-1. Assign the new user (admin) admin permissions
-
-   ```bash
-   oc adm policy add-cluster-role-to-user cluster-admin admin
-   ```
 
 ## Access the OpenShift Console
 
@@ -637,14 +643,13 @@
    sudo vi /etc/hosts
 
    # Append the following entries:
-   192.168.0.96 ocp-svc api.lab.ocp.lan console-openshift-console.apps.lab.ocp.lan oauth-openshift.apps.lab.ocp.lan downloads-openshift-console.apps.lab.ocp.lan alertmanager-main-openshift-monitoring.apps.lab.ocp.lan grafana-openshift-monitoring.apps.lab.ocp.lan prometheus-k8s-openshift-monitoring.apps.lab.ocp.lan thanos-querier-openshift-monitoring.apps.lab.ocp.lan
+   <HELPER HOST IP> ocp-svc api.lab.ocp.lan console-openshift-console.apps.lab.ocp.lan oauth-openshift.apps.lab.ocp.lan downloads-openshift-console.apps.lab.ocp.lan alertmanager-main-openshift-monitoring.apps.lab.ocp.lan grafana-openshift-monitoring.apps.lab.ocp.lan prometheus-k8s-openshift-monitoring.apps.lab.ocp.lan thanos-querier-openshift-monitoring.apps.lab.ocp.lan
    ```
 
 1. Navigate to the [OpenShift Console URL](https://console-openshift-console.apps.lab.ocp.lan) and log in as the 'admin' user
 
    > You will get self signed certificate warnings that you can ignore
-   > If you need to login as kubeadmin and need to the password again you can retrieve it with: `cat ~/ocp-install/auth/kubeadmin-password`
-
+   
 ## Troubleshooting
 
 1. You can collect logs from all cluster hosts by running the following command from the 'ocp-svc' host:
@@ -653,7 +658,7 @@
    ./openshift-install gather bootstrap --dir ocp-install --bootstrap=192.168.22.200 --master=192.168.22.201 --master=192.168.22.202 --master=192.168.22.203
    ```
 
-1. Modify the role of the Control Plane Nodes
+2. Modify the role of the Control Plane Nodes
 
    If you would like to schedule workloads on the Control Plane nodes apply the 'worker' role by changing the value of 'mastersSchedulable' to true.
 
@@ -664,3 +669,10 @@
    ```bash
    oc edit schedulers.config.openshift.io cluster
    ```
+3. CSI Error
+   If you see the following error
+   ```
+   MountVolume.SetUp failed for volume "pvc-XXX-YYY" : rpc error: code = Internal desc = iscsi/lvm failure, last err seen: iscsi: failed to sendtargets to portal 192.168.26.14:3260 output: Failed to connect to bus: No data available iscsiadm: can not connect to iSCSI daemon (111)! iscsiadm: Cannot perform discovery. Initiatorname required. iscsiadm: Could not perform SendTargets discovery: could not connect to iscsid , err exit status 20
+   ```
+   
+   Follow the steps here `https://portal.nutanix.com/page/documents/kbs/details?targetId=kA07V000000LWXJSA4`
