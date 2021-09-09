@@ -12,7 +12,7 @@ parameters:
   csi.storage.k8s.io/controller-expand-secret-namespace: ntnx-system
   csi.storage.k8s.io/fstype: ext4
   #maksure dataServiceEndPoint is changed
-  dataServiceEndPoint: <PRISMELEMENT FLOATING IP>:3260 
+  dataServiceEndPoint: < iSCSI Data Services IP  FLOATING IP from cluster settings>:3260 
   #maksure storageContainer is changed
   storageContainer: <default-container-NAME>
   storageType: NutanixVolumes
