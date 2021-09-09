@@ -45,7 +45,6 @@ The following documentation was to set up everything from scracth and for me to 
    - Pull secret
    - Command Line Interface for Linux and your workstations OS
    - Red Hat Enterprise Linux CoreOS (RHCOS)
-     - rhcos-X.X.X-x86_64-metal.x86_64.raw.gz
      - rhcos-X.X.X-x86_64-installer.x86_64.iso
 
 ## Prepare the 'Nutanix' environment
@@ -141,10 +140,10 @@ The following documentation was to set up everything from scracth and for me to 
    dnf install git -y
    ```
 
-1. Download [config files](https://github.com/ryanhay/ocp4-metal-install) for each of the services
+1. Download [config files](https://github.com/rajeevramani/ocp4-metal-install) for each of the services
 
    ```bash
-   git clone https://github.com/ryanhay/ocp4-metal-install
+   git clone https://github.com/rajeevramani/ocp4-metal-install.git
    ```
 
 1. OPTIONAL: Create a file '~/.vimrc' and paste the following (this helps with editing in vim, particularly yaml files):
