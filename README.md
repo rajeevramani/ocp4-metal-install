@@ -5,7 +5,9 @@ These instructions are based on the original `https://github.com/ryanhay/ocp4-me
 I have made a few modifications based on the following peices of documentation avaiable
 
 [Redhat on AOS videao](https://www.youtube.com/watch?v=7616SPiOXi8)
+
 [Nutnaix on AOS github](https://github.com/nutanix/openshift/tree/main/docs/install/manual)
+
 [Nutanix CSI setup](https://github.com/nutanix/openshift/tree/main/operators/csi)
 
 The following documentation was to set up everything from scracth and for me to do the install the hard way. A big thanks to @ryanhay for his original repo.
